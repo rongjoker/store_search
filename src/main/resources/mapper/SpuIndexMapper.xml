@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.cyk.es.mapper.SpuIndexMapper">
+
+    <resultMap id="EsGoodsBaseExtraResultMap" type="com.cyk.es.entity.ESSpuIndexEntity">
+        <id column="goods_id" property="goodsId" jdbcType="BIGINT"/>
+        <id column="goods_img" property="goodsImgId" jdbcType="VARCHAR"/>
+        <result column="goods_name" property="goodsInfoName" jdbcType="VARCHAR"/>
+        <result column="goods_subtitle" property="goodsSubtitle" jdbcType="VARCHAR"/>
+        <result column="goods_added" property="goodsInfoAdded" jdbcType="CHAR"/>
+        <result column="goods_uptime" property="goodsAddedTime" jdbcType="TIMESTAMP"/>
+        <result column="goods_price" property="goodsInfoPreferPrice" jdbcType="DECIMAL"/>
+        <result column="goods_create_time" property="goodsInfoCreateTime" jdbcType="TIMESTAMP"/>
+        <result column="goods_modified_time" property="goodsModifiedTime" jdbcType="TIMESTAMP"/>
+        <result column="goods_del_time" property="goodsDelTime" jdbcType="TIMESTAMP"/>
+        <result column="goods_delflag" property="goodsDelflag" jdbcType="CHAR"/>
+        <result column="goods_belo" property="thirdId" jdbcType="BIGINT"/>
+        <result column="goods_belo_name" property="thirdName" jdbcType="VARCHAR"/>
+        <result column="cat_id" property="catId" jdbcType="BIGINT"/>
+        <result column="third_cate_id" property="thirdCateId" jdbcType="BIGINT"/>
+        <result column="type_id" property="typeId" jdbcType="BIGINT"/>
+        <result column="brand_id" property="brandId" jdbcType="BIGINT"/>
+        <result column="sale_count" property="saleCount" jdbcType="INTEGER"/>
+        <result column="collection_count" property="collectionCount" jdbcType="INTEGER"/>
+        <result column="visit_num" property="visitNum" jdbcType="INTEGER"/>
+    </resultMap>
+
+    <resultMap id="EsGoodsGoodsDetailBaseExtraResultMap" type="com.cyk.es.entity.ESSpuIndexEntity"
+               extends="EsGoodsBaseExtraResultMap">
+        <!-- 查询品牌 -->
+        <collection property="brand" column="brand_id"
+                    javaType="com.cyk.es.entity.EsGoodsBrandEntity" ofType="com.cyk.es.entity.EsGoodsBrandEntity"
+                    select="selectEsGoodsBrandByPrimaryKey"></collection>
+        <!-- 查询属性参数 -->
+        <collection property="paramList" column="goods_id"
+                    javaType="ArrayList" ofType="com.cyk.es.entity.EsExpandparamEntity"
+                    select="selectParamByGoodsId"></collection>
+
+    <!--查询分类-->
+    <!--<collection property="cateList" column="cat_id" javaType="ArrayList"-->
+        <!--ofType="com.cyk.es.entity.EsGoodsCategoryEntity" select="selectEsGoodsCategoryByPrimaryKey"></collection>-->
+
+</resultMap>
+
+<sql id="Base_Column_List_EsGoods">
+    first_cat_id AS cat_id,type_id,brand_id,goods_id,
+    goods_img, goods_name,goods_subtitle, goods_added, goods_uptime,
+    goods_create_name, goods_create_time,
+    goods_modified_name,
+    goods_modified_time,
+    goods_del_name, goods_del_time, goods_delflag,
+    goods_belo, goods_belo_name, IFNULL(sale_count,0) as sale_count,
+    IFNULL(collection_count,0) as collection_count,( select info.goods_info_prefer_price from cyk_goods_info info  where info.goods_id = a.goods_id and
+    info.goods_info_added='1' and info.goods_info_delflag='0'
+        order by info.goods_info_prefer_price
+        limit 0,1 ) AS goods_price,( select sum(info.visit_num) from cyk_goods_info info  where info.goods_id = a.goods_id ) AS visit_num
+</sql>
+
+<select id="findGoodsById" resultMap="EsGoodsGoodsDetailBaseExtraResultMap" parameterType="java.lang.Long">
+    select
+    <include refid="Base_Column_List_EsGoods"/>
+    FROM cyk_goods a
+    LEFT JOIN(SELECT COUNT(1) AS collection_count, goods_id AS pid FROM cyk_customer_follow WHERE del_flag = '0'
+    GROUP BY goods_id ) AS follow
+    ON follow.pid = a.goods_id
+    LEFT JOIN (select sum(g.goods_info_num) as sale_count, g.goods_id as sid from cyk_order o , cyk_order_goods g
+    where o.order_id = g.order_id and o.order_status = '100' group by g.goods_id ) as sale
+    ON sale.sid = a.goods_id
+    WHERE a.goods_delflag = '0'
+    <if test="_parameter !=null and _parameter !=''">
+        and a.goods_id = #{goodsId,jdbcType=BIGINT}
+    </if>
+</select>
+
+    <select id="findGoodsByIds" resultMap="EsGoodsGoodsDetailBaseExtraResultMap">
+        select
+        <include refid="Base_Column_List_EsGoods"/>
+        FROM cyk_goods a
+        LEFT JOIN(SELECT COUNT(1) AS collection_count, goods_id AS pid FROM cyk_customer_follow WHERE del_flag = '0'
+        GROUP BY goods_id ) AS follow
+        ON follow.pid = a.goods_id
+        LEFT JOIN (select sum(g.goods_info_num) as sale_count, g.goods_id as sid from cyk_order o , cyk_order_goods g
+        where o.order_id = g.order_id and o.order_status = '100' group by g.goods_id ) as sale
+        ON sale.sid = a.goods_id
+        WHERE a.goods_delflag = '0'
+        <if test="_parameter !=null">
+            and a.goods_id IN
+            <foreach collection="list" index="index" item="goodsId" open="(" separator="," close=")">
+                #{goodsId}
+            </foreach>
+        </if>
+    </select>
+
+<!-- 查询总数-->
+    <select id="selectGoodsSpuListCount" resultType="java.lang.Integer">
+		select count(1)
+		FROM  cyk_goods a
+		WHERE a.goods_delflag = '0'
+	</select>
+
+    <!--分页查询 and  a.goods_added = '1' -->
+    <select id="selectEsGoodsListByPage" resultMap="EsGoodsGoodsDetailBaseExtraResultMap" parameterType="java.util.Map">
+        select
+        <include refid="Base_Column_List_EsGoods"/>
+        FROM cyk_goods a
+        LEFT JOIN(SELECT COUNT(1) AS collection_count, goods_id AS pid FROM cyk_customer_follow WHERE del_flag = '0'
+        GROUP BY goods_id ) AS follow
+        ON follow.pid = a.goods_id
+        LEFT JOIN (select sum(g.goods_info_num) as sale_count, g.goods_id as sid from cyk_order o, cyk_order_goods g
+        where o.order_id = g.order_id and o.order_status = '100' group by g.goods_id ) as sale
+        ON sale.sid = a.goods_id
+        WHERE a.goods_delflag = '0'
+        limit #{start},#{end}
+    </select>
+
+
+    <!-- 查询总数-->
+    <select id="selectGoodsElasticListCount" resultType="java.lang.Integer">
+        select count(1)
+        FROM  cyk_goods b,cyk_goods_info a
+        WHERE a.goods_id = b.goods_id
+        AND b.goods_delflag = '0'
+        AND a.goods_info_delflag = '0'
+        AND a.audit_status
+        IN('3','0')
+    </select>
+
+
+    <!--EsGoodsCategoryMapper-->
+    <resultMap id="EsGoodsCategoryBaseResultMap" type="com.cyk.es.entity.EsGoodsCategoryEntity">
+        <id column="cat_id" property="catId" jdbcType="BIGINT"/>
+        <result column="cat_name" property="catName" jdbcType="VARCHAR"/>
+        <result column="cat_parent_id" property="catParentId" jdbcType="BIGINT"/>
+        <result column="type_id" property="typeId" jdbcType="BIGINT"/>
+        <result column="cat_sort" property="catSort" jdbcType="INTEGER"/>
+        <result column="cat_grade" property="catGrade" jdbcType="INTEGER"/>
+        <result column="cat_seo_title" property="catSeoTitle" jdbcType="VARCHAR"/>
+        <result column="cat_seo_keyword" property="catSeoKeyword"
+                jdbcType="VARCHAR"/>
+        <result column="cat_seo_desc" property="catSeoDesc" jdbcType="VARCHAR"/>
+        <result column="cat_is_show" property="catIsShow" jdbcType="CHAR"/>
+        <result column="cat_delflag" property="catDelflag" jdbcType="CHAR"/>
+        <result column="cat_create_name" property="catCreateName"
+                jdbcType="VARCHAR"/>
+        <result column="cat_create_time" property="catCreateTime"
+                jdbcType="TIMESTAMP"/>
+        <result column="cat_modified_name" property="catModifiedName"
+                jdbcType="VARCHAR"/>
+        <result column="cat_modified_time" property="catModifiedTime"
+                jdbcType="TIMESTAMP"/>
+        <result column="cat_del_name" property="catDelName" jdbcType="VARCHAR"/>
+        <result column="cat_del_time" property="catDelTime" jdbcType="TIMESTAMP"/>
+        <result column="cat_rate" property="catRate" jdbcType="DECIMAL"/>
+        <result column="cat_model" property="catModel" jdbcType="CHAR"/>
+    </resultMap>
+
+    <select id="selectEsGoodsCategoryByPrimaryKey" resultMap="EsGoodsCategoryBaseResultMap"
+            parameterType="java.lang.Long">
+        select
+        cat_id, cat_name
+        from cyk_goods_category
+        where
+        FIND_IN_SET(cat_id, getParentList(#{catId,jdbcType=BIGINT}))
+    </select>
+
+    <select id="selectGoodsCateById" resultMap="EsGoodsCategoryBaseResultMap"
+            parameterType="java.lang.Long">
+        select
+        cat_id, cat_name,cat_parent_id
+        from cyk_goods_category
+        where cat_id=#{catId,jdbcType=BIGINT} AND cat_delflag='0' LIMIT 1;
+    </select>
+
+
+    <select id="selectAllGoodsCateList" resultMap="EsGoodsCategoryBaseResultMap">
+        select
+        cat_id, cat_name,cat_parent_id
+        from cyk_goods_category
+        where 1=1 AND cat_delflag='0' AND cat_name IS NOT NULL
+    </select>
+
+
+    <!--EsThirdCateMapper-->
+    <resultMap id="EsThirdCateBaseResultMap" type="com.cyk.es.entity.EsThirdCateEntity">
+        <id column="cat_id" property="catId" jdbcType="BIGINT"/>
+        <result column="cat_name" property="catName" jdbcType="VARCHAR"/>
+        <result column="cat_parent_id" property="catParentId" jdbcType="BIGINT"/>
+
+    </resultMap>
+
+    <select id="selectEsThirdCateByPrimaryKey" resultMap="EsThirdCateBaseResultMap" parameterType="java.lang.Long">
+        select
+        cat_id, cat_name
+        from cyk_third_cate
+        where
+        FIND_IN_SET(cat_id, getThirdParentList(#{catId,jdbcType=BIGINT}))
+    </select>
+
+
+    <select id="selectGoodsThirdCateList" resultMap="EsThirdCateBaseResultMap" parameterType="java.lang.Long">
+        select
+        cat_id, cat_name,cat_parent_id
+        from cyk_third_cate
+        where cat_id= #{catId,jdbcType=BIGINT}
+    </select>
+
+
+    <!--EsGoodsBrandMapper-->
+    <resultMap id="EsGoodsBrandBaseResultMap" type="com.cyk.es.entity.EsGoodsBrandEntity">
+        <id column="brand_id" property="brandId" jdbcType="BIGINT"/>
+        <result column="brand_nickname" property="brandNickname"
+                jdbcType="VARCHAR"/>
+        <result column="brand_name" property="brandName" jdbcType="VARCHAR"/>
+        <result column="brand_url" property="brandUrl" jdbcType="VARCHAR"/>
+        <result column="brand_logo" property="brandLogo" jdbcType="VARCHAR"/>
+        <result column="brand_prom_index" property="brandPromIndex"
+                jdbcType="CHAR"/>
+        <result column="brand_sort" property="brandSort" jdbcType="INTEGER"/>
+        <result column="brand_seo_title" property="brandSeoTitle"
+                jdbcType="VARCHAR"/>
+        <result column="brand_seo_keyword" property="brandSeoKeyword"
+                jdbcType="VARCHAR"/>
+        <result column="brand_seo_desc" property="brandSeoDesc"
+                jdbcType="VARCHAR"/>
+        <result column="brand_delflag" property="brandDelflag"
+                jdbcType="CHAR"/>
+        <result column="brand_create_name" property="brandCreateName"
+                jdbcType="VARCHAR"/>
+        <result column="brand_create_time" property="brandCreateTime"
+                jdbcType="TIMESTAMP"/>
+        <result column="brand_modified_name" property="brandModifiedName"
+                jdbcType="VARCHAR"/>
+        <result column="brand_modified_time" property="brandModifiedTime"
+                jdbcType="TIMESTAMP"/>
+        <result column="brand_del_name" property="brandDelName"
+                jdbcType="VARCHAR"/>
+        <result column="brand_del_time" property="brandDelTime"
+                jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <select id="selectEsGoodsBrandByPrimaryKey" resultMap="EsGoodsBrandBaseResultMap"
+            parameterType="java.lang.Long">
+        select brand_id, brand_name
+        from cyk_goods_brand
+        where
+        brand_id = #{brandId,jdbcType=BIGINT}
+    </select>
+
+
+    <!--EsExpandparamMapper-->
+    <resultMap id="EsExpandparamBaseResultMap" type="com.cyk.es.entity.EsExpandparamEntity">
+        <id column="rele_expandparam_id" property="releExpandparamId"
+            jdbcType="BIGINT"/>
+        <result column="goods_id" property="goodsId" jdbcType="BIGINT"/>
+        <result column="expandparam_id" property="expandparamId"
+                jdbcType="BIGINT"/>
+        <result column="expandparam_name" property="expandparamName"
+                jdbcType="BIGINT"/>
+        <result column="expandparam_value_id" property="expandparamValueId"
+                jdbcType="VARCHAR"/>
+        <result column="expandparam_value_name" property="expandparamValueName"
+                jdbcType="VARCHAR"/>
+
+    </resultMap>
+
+    <select id="selectParamByGoodsId" resultMap="EsExpandparamBaseResultMap"
+            parameterType="java.lang.Long">
+        select rm.rele_expandparam_id,
+        rm.goods_id,
+        tm.expandparam_id,
+        tm.expandparam_name,
+        vm.expandparam_value_id,
+        vm.expandparam_value_name
+        from cyk_goods_rele_expandparam rm ,
+        cyk_goods_type_expandparam
+        tm,cyk_goods_type_expandparam_value vm
+        where
+        rm.expandparam_id = tm.expandparam_id and rm.expangparam_value_id =
+        vm.expandparam_value_id
+        and goods_id = #{goodsId,jdbcType=BIGINT}
+        and
+        rele_expandparam_delflag = '0'
+    </select>
+
+
+</mapper>
